@@ -59,7 +59,7 @@
     创建线程可以通过继承Thread类、实现Runnable接口、实现Callable接口、线程池、使用CompletableFuture类等。
 
     Java线程的状态在Thread.State枚举类里有定义，一共有：NEW, RUNNABLE, BLOCKED, WAITING, TIMED_WAITING和TERMINATED。
-    ![alt text](image-5.png)
+    ![alt text](image-6.png)
     - NEW：初始状态，线程被创建出来，但是还没有调用；
     - RUANNABLE：运行状态 ，线程被调用了start()方法后；
     - BLOCKED: 阻塞状态，由于某种原因暂时停止运行，知道线程处理就绪状态，

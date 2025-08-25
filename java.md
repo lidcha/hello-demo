@@ -38,15 +38,16 @@
     进程是程序的一次执行过程，是系统运行的基本单位，而线程与进程相似，但是是比进程更小的一个执行单位，一个进程中可产生多个线程。
     线程和进程最大的不同在于基本上各进程是独立的，而各线程则不一定，同进程中的线程有可能会互相影响。
     
-    附图Java内存区域
+    Java内存区域如下图所示：
+
     ![alt text](image-4.png)
 
     Java内存区域在JVM中可以大致分为线程私有和线程共享两部分，
     - 线程私有部分包括：
-        - 程序计数器：报错当前字节码执行位置，多线程情况记录当前线程执行的位置，从而线程被切换回来的时候能知道该线程运行到哪里了；它是私有的主要是为了线程切换后能回复到正确的位置。
+        - 程序计数器：保存当前字节码执行位置，多线程情况记录当前线程执行的位置，从而线程被切换回来的时候能知道该线程运行到哪里了；它是私有的主要是为了线程切换后能回复到正确的位置。
         - 虚拟机栈：每个Java方法执行前都会创建一个栈帧来存储局部变量表、操作数栈、常量池引用等信息，方法调用直到执行完，对应栈帧入栈和出栈的过程。
         - 本地方法栈：和虚拟机栈类似，只不过适用于native方法。
-        - 这两个是线程私有的主要是为了保证线程中的局部变量不被别的线程访问到。
+        - 这两个栈是线程私有的主要是为了保证线程中的局部变量不被别的线程访问到。
     - 线程共享部分包括
         - 堆
         - 方法区/元空间
@@ -60,13 +61,98 @@
 
     Java线程的状态在Thread.State枚举类里有定义，一共有：NEW, RUNNABLE, BLOCKED, WAITING, TIMED_WAITING和TERMINATED。
     ![alt text](image-6.png)
-    - NEW：初始状态，线程被创建出来，但是还没有调用；
+    - NEW：初始状态，线程对象被创建，但是未调用start()方法；
     - RUANNABLE：运行状态 ，线程被调用了start()方法后；
-    - BLOCKED: 阻塞状态，由于某种原因暂时停止运行，知道线程处理就绪状态，
-        - 同步阻塞：线程在获取synchronized同步锁失败，进入同步阻塞状态；
-    - WAITING: 等待状态，该线程需要等待其他线程做出一些特定动作（通知或中断）；
-    - TIME_WAITING: 超时等待，可以再指定时间后自行返回；
-    - TERMINATED: 终止状态，表示该线程已经运行完毕；
+    - BLOCKED: 阻塞状态，例如线程等待获取synchronized锁；
+    - WAITING: 等待状态，直到被其他线程显示唤醒（如notify()通知或中断）；
+    - TIME_WAITING: 超时等待，超过指定时间后自动返回；
+    - TERMINATED: 终止状态，表示该线程已经运行完毕或异常退出；
+
+    Q: 线程间的状态是怎么流转的？
+
+    A: 从NEW -> RUNNABLE（初始态 到 运行态，通过调用线程对象的start()方法）；从RUNNABLE -> BLOCKED（从运行态 到 阻塞态，线程尝试获取synchronized锁失败）；从RUNNABLE -> WAITING（从运行态 到 等待态，通过调用Object.wait() / LockSupport.park()，进入无限等待）；从 RUNNABLE -> TIMED_WAITING（运行态 到 超时等待，通过调用sleep(ms) / join(ms) / wait(ms) 进入超时等待）；从WAITING/TIMED_WAITING -> RUNNABLE（从等待/超时等待 到 运行态，通过调用notify() / notifyAll() / unpark()唤醒）；BLOCKED -> RUNNABLE ( 从阻塞 到 运行，获取锁后 )；RUN -> TERNIMATED（run()执行完毕或者抛异常结束）。
+
+    PS：实际回答时不用所有流转都打出来，只需要简单陈述6种状态含义后，提及从NEW -> RUNNABLE、RUNNABLE -> BLOCKED、RUNNABLE -> WAITING/TIMED_WAITING、RUNNABLE -> TERMINATED是怎么流转的即可。
+
+    Q: join()方法的底层原理是什么？
+
+    A: join()方法本质上是等待另一个线程结束，底层调用了wait()方法，线程A调用ThreadB.join()方法，会让A进入WAITING/TIMED_WAITING状态，直到线程B结束或中断。
+
+    Q: join()会释放锁吗？
+
+    A: 
+
+    三个线程交替打印的实现如下：
+    ```
+    public class ThreeThreadWaitNotify {
+    private static final Object lock = new Object();
+    private static int state = 0; // 0 -> A, 1 -> B, 2 -> C
+    private static final int times = 5; // 每个线程打印次数
+
+    public static void main(String[] args) {
+        Thread threadA = new Thread(() -> {
+            for (int i = 0; i < times; i++) {
+                synchronized (lock) {
+                    while (state % 3 != 0) { // 不该 A 打印就等待
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    System.out.println("A");
+                    state++;
+                    lock.notifyAll(); // 唤醒其他线程
+                }
+            }
+        });
+
+        Thread threadB = new Thread(() -> {
+            for (int i = 0; i < times; i++) {
+                synchronized (lock) {
+                    while (state % 3 != 1) {
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    System.out.println("B");
+                    state++;
+                    lock.notifyAll();
+                }
+            }
+        });
+
+        Thread threadC = new Thread(() -> {
+            for (int i = 0; i < times; i++) {
+                synchronized (lock) {
+                    while (state % 3 != 2) {
+                        try {
+                            lock.wait();
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                    System.out.println("C");
+                    state++;
+                    lock.notifyAll();
+                }
+            }
+        });
+
+        threadA.start();
+        threadB.start();
+        threadC.start();
+    }
+}
+
+    ```
+
+    **线程池的参数**
+    
+    - corePoolSize: 核心线程数。线程池会保持这些线程，即使线程是空闲的。
+    - 
 
 3.  Thredlocal的原理，为什么容易内存泄漏
 4.  Syschronized和Lock的区别，AQS的原理，volatile

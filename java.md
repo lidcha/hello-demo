@@ -57,7 +57,7 @@
 
     java内存模型是共享内存的并发模型，线程之间主要通过读-写共享变量来完成隐式通信。
 
-    创建线程可以通过继承Thread类、实现Runnable接口、实现Callable接口、线程池、使用CompletableFuture类等。
+    严格来讲，真正能创建线程的，只能通过Thread类，即Thread实例化后调用start(); 但是可以通过实现Runnable接口、实现Callable接口、线程池、使用CompletableFuture类等方式来提交任务，给到线程去执行。
 
     Java线程的状态在Thread.State枚举类里有定义，一共有：NEW, RUNNABLE, BLOCKED, WAITING, TIMED_WAITING和TERMINATED。
     ![alt text](image-6.png)
@@ -81,6 +81,43 @@
     Q: join()会释放锁吗？
 
     A: 
+
+    Q: Thread#sleep()方法和Object#wait()方法的区别
+
+    A: 共同点，二者都可以暂定线程的执行；不同的点：首先sleep()没有释放锁，而wait()释放了锁。wait方法通常用于线程间的交互/通信，sleep() 通常用于暂停执行，wait()调用后，线程不会自动苏醒，需要别的线程调用同一个对象的notify或者notifyAll()唤醒，而sleep方法执行完成后，线程会自动苏醒。sleep()是Thread类的静态本地方法，而wait()是Object类的本地方法，wait()是让获得对象锁的线程实现等待，会释放当前线程占用的对象锁，所以需要在对象操作。
+
+    Q: Runnable接口和Callable接口有什么共同点和区别？
+
+    A: 共同点是都是接口，都是任务接口用来描述一段需要并发执行的逻辑，都能被线程池执行，都支持多线程唤醒下的任务调度。区别上，首先Runnable只能执行任务，没有返回值，异常也不能往外抛；Callable可以返回结果，还能抛出异常，通常和Future/FutureTask一起用来拿结果。另外需要明确的是，两个接口本身都不能直接创建线程，他们只是“任务模型（可以理解成就是任务）”，真正的线程要考Thread类或者线程池框架来驱动。
+    ```
+    public class MyRunnable implements Runnable{
+
+        @Override
+        public void run(){
+            ......
+        }
+    }
+
+    Thread t = new Thread(new MyRunnable()); // 或者可以使用匿名内部类，或者直接pool.execute(new MyRunnable())提交线程池执行
+
+    // Callable的使用
+    public class MyCallable implements Callable<Integer> {
+        @Override
+        public Integer call() throws Exception {
+            return 42;
+        }
+    }
+
+    FutureTask<Integer> futureTask = new FutureTask<>(task); // 或者配合线程池使用Future<Integer> future = pool.submit(() -> 123);
+
+    Thread t = new Thread(futureTask);
+    t.start();
+
+    Integer result = futureTask.get();
+
+
+    ```
+
 
     三个线程交替打印的实现如下：
     ```
@@ -144,18 +181,71 @@
         threadA.start();
         threadB.start();
         threadC.start();
+        }
     }
-}
-
     ```
+
+
 
     **线程池的参数**
     
-    - corePoolSize: 核心线程数。线程池会保持这些线程，即使线程是空闲的。
-    - 
+    - corePoolSize: 核心线程数。线程池会保持这些线程，即使线程是空闲的。默认情况下不会回收核心线程
+    - maximumPoolSize: 最大线程数
+    - keepAliveTime + unit: 非核心线程空闲多久后被回收。
+    - workQueue： 阻塞队列，用来存放等待执行的任务，例如ArrayBlockingQueue、LinkedBlockingQueue、PriorityBlockingQueue、SynchronousQueue(同步队列，没有容量，不存储元素，如果有空闲线程，使用空闲线程，没有则新建线程来处理，相当于线程数是无限制)等。
+    - handler: 拒绝策略。当任务满了且线程数达到上限时的处理方式，常见的拒绝策略有：
+        - AbortPolicy：直接抛出异常，调用方能立刻感知，适用于任务不能丢的情况，必须显示感知失败，或者是想用异常来驱动上层的容错或重试逻辑。
+        - CallerRunsPolicy：拒绝时不丢任务，任务交给调用者线程执行，例如任务量大时，宁可降低吞吐量，也不能丢任务，比如日志写入、消息消费，业务能接受延迟但不接受丢失。
+        - DiscardPolicy：直接丢弃，不报错，适合对任务可靠性要求很低的情况，但是大部分情况下无法接受，属于业务黑洞了。
+        - DiscardOldestPolicy：丢弃队列里最老的任务，再尝试提交，适合任务本身就有高时效性，过期了就没价值那种。
+        - 自定义策略：实际工作中常见，例如把任务写日志告警，或者把拒绝的任务转移到MQ里重试。
+
+    线程池处理任务的流程：
+    - 如果当前运行的线程数小于核心线程数，线程池会新建线程来执行任务。
+    - 否则会尝试把任务放进阻塞队列，
+    - 如果任务队列已满，但是运行线程数小于最大线程数，则新建一个线程来执行任务。
+    - 如果当前运行的线程数已经等于最大线程数了，那么当前任务触发执行拒绝策略。
+
+    当然线程池可以提前预热，帮助我们在提交任务之前，完成核心现场的创建，即```prestartAllCoreThreads()```.
+
+    如果要关闭线程池，可以调用shutdown(): 不再接收新任务，但会把当前队列里的任务跑完；shutdownNow(): 尝试中断正在执行的任务 + 清空队列。
+
+    Q: 线程池中线程异常后，销毁还是复用？
+
+    A: 在线程池中，线程执行任务时如果抛出未捕获的异常，那这个线程会结束并销毁，不会被复用。但是线程池会感知到线程减少，会根据配置重新创建一个新线程来补位。
+
+    Q: 核心线程空闲时处于什么状态？
+
+    A: 在空闲时间，会一直处于WAITING状态，等待获取任务，当队列中有可用任务时，会唤醒被阻塞的线程，线程的状态会由WAITING状态变为RUNNABLE状态，之后去执行对应任务。 
 
 3.  Thredlocal的原理，为什么容易内存泄漏
-4.  Syschronized和Lock的区别，AQS的原理，volatile
+
+    **ThreadLocal** 类允许每个线程绑定自己的值，用于存储线程私有数据，确保不同线程之间的数据互不干扰。
+    
+    当我们创建一个`ThreadLocal`变量时，每个访问该变量的线程都会拥有一个独立的副本。线程可以通过`get()`方法获取自己线程的本地副本，或通过`set()`方法来修改该线程副本的值，从而避免了线程安全问题。
+
+    ThreadLocal原理如下：
+
+    每个Thread对象里有个`ThreadLocalMap`属性。`ThreadLocalMap`底层是一个自定义Entry数组，可以理解为`ThreadLocal`对象实现的定制化的hashMap，key是ThreadLocal实例本身（用弱引用存储），value是当前线程对应的副本数据。
+    Thread
+        └── ThreadLocalMap (存放本线程相关的数据)
+            └── Entry (key = ThreadLocal 弱引用, value = 实际存储的对象)
+    当调用`threadlocal.set(value)`方法时，会拿到当前线程，找到它的`ThreadLocalMap`，以当前`ThreadLocal`作为key存进去value值。`get()`时也类似。
+
+    Q: 为什么要弱引用？
+    
+    A: 因为一旦 ThreadLocal 对象本身不再被外部引用，应该允许 GC 把它回收，避免 key 永远存在导致内存泄漏
+
+    Q: 为什么容易内存泄漏？
+    
+    A: 主要是ThreadLocalMap中的key是对ThreadLocal实例的弱引用，当业务代码不再持有这个ThreadLocal实例时，GC就会把这个key回收掉，但是可能value还是强引用，不会自动清理，结果就会ThreadLocalMap中key = null, value = 对象的数据，value永远占用内存。如果线程是普通的短生命周期的线程，线程结束后，线程实例被回收，那整个`ThreadLocalMap`就被回收，也不会出问题，但是如果是线程池里的核心线程，不会被回收，那它的`ThreadLocalMap`对象也会一直或者，那其中的“孤儿数据”也会一直活着。 因此用完就remove()掉是最好的解决办法。
+
+    Q: 为什么key不能改成强引用？
+
+    A: 首先`ThreadLocalMap`是挂在Thread对象下的，每个线程维护自己的`ThreadLocalMap`，如果改为强引用，那么只要这个Thread存活，它持有的`ThreadLocalMap`就会一直持有`ThreadLocal`。这就以为这创建过的所有ThreadLocal实例都会一直活着，即使没有地方引用这个ThreadLocal实例了，也会因为被`ThreadLocalMap`强引用而不能回收，泄漏范围更大了。
+    
+
+4.  Syschronized和Lock的区别，AQS的原理，volatile，retrantLock
 5.  JVM的原理，垃圾回收，分代收集的算法，各种问题怎么排查（频繁Full GC，内存占用大，OOM等），JVM各种参数的优化。
 6.  CMS, Parralel, G1等垃圾回收器的原理
 7.  JAVA类加载的过程与这样做的原因，有没有办法打破双亲委派，Class这个类在哪一块区域
@@ -230,11 +320,13 @@
 
     SLF4j就是SPI实现的一个经典示例。
 
-14. ArrayBlockingQueue
+14. 阻塞队列及ArrayBlockingQueue
+
+    阻塞队列和普通队列的区别就是支持阻塞读取写入操作，当队列满了之后，往队列里放任务的线程会阻塞，当队列空了的时候，往外取任务的线程会被阻塞（等别人放进来了再去取）非常契合生产者-消费者模型
 
     **ArrayBlockingQueue**是一个阻塞队列，底层采用数组实现，是一个长度/容量优先的队列，一旦创建，容量不能改变。为了保证线程安全，其并发控制使用可重入锁ReentrantLock，不管是读取还是插入操作，都需要先获取锁再操作。
 
-    - 内部维护一个定长的数组用于存储uansu。
+    - 内部维护一个定长的数组用于存储元素。
     - 使用ReentrantLock锁来实现线程安全。
     - 通过Condition实现线程间的等待和唤醒操作。例如当队列已满时，生产者线程会调用notFull.await()方法让生产者线程进行等待，直到消费者线程从队列去出元素后，通过notFull.singal()唤醒生产者线程；当队列为空时，消费者线程会调用notEmpty。await()来让消费者线程等待，知道新的uansu被添加后，生产者线程调用notEmpt().singal()唤醒消费者线程。
 

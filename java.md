@@ -233,7 +233,7 @@
     当调用`threadlocal.set(value)`方法时，会拿到当前线程，找到它的`ThreadLocalMap`，以当前`ThreadLocal`作为key存进去value值。`get()`时也类似。
 
     Q: 为什么要弱引用？
-    
+
     A: 因为一旦 ThreadLocal 对象本身不再被外部引用，应该允许 GC 把它回收，避免 key 永远存在导致内存泄漏
 
     Q: 为什么容易内存泄漏？
@@ -245,7 +245,171 @@
     A: 首先`ThreadLocalMap`是挂在Thread对象下的，每个线程维护自己的`ThreadLocalMap`，如果改为强引用，那么只要这个Thread存活，它持有的`ThreadLocalMap`就会一直持有`ThreadLocal`。这就以为这创建过的所有ThreadLocal实例都会一直活着，即使没有地方引用这个ThreadLocal实例了，也会因为被`ThreadLocalMap`强引用而不能回收，泄漏范围更大了。
     
 
-4.  Syschronized和Lock的区别，AQS的原理，volatile，retrantLock
+4. Syschronized和Lock的区别，AQS的原理，volatile，retrantLock
+
+    **volatile**关键字
+
+    volatile关键字在java中用于修饰变量，使变量具有可见性和有序性。但是不能保证原子性，	在多线程环境中，当一个线程修改了volatile修饰的关键字后，修改后的值对其他线程是立即可见的。其有序性是指使用volatile关键字修饰的关键字会禁止指令重排序。相当于如果不用这个关键字修饰的变量，编译器可能进行指令重排序，提高性能，但是会影响多线程环境下的正确。
+	
+	保证可见性性的方式：1. 内存可见性协议，每个线程在操作变量时，实际是先从该线程的本地缓存中读写，而不是直接在主内存中操作。但是如果变量被volitale修饰
+	则会直接操作主内存，不使用线程本地缓存，这样就使得如果a线程修改了变量，那直接会刷新主内存中的变量值，b线程读取时也会直接读主内存中的变量值
+	
+	保证有序性的方式：使用内存屏障，volatile关键字修饰的变量在实现中，会在对该变量的读写前都插入读写屏障，	这样来保证指令执行顺序，防止重排序。
+	
+    总结来讲：
+    - volatile 关键字主要用于修饰变量，有两个作用：
+        - 保证可见性，即一个线程修改变量后，其他线程能立即看到。当一个变量被volatile关键字修饰时，这就指示编译器，这个变量是共享且不稳定的，每次使用它都需要到主存中读取。
+        - 保证有序性，通过内存屏障，禁止指令重排序，确保读写顺序。在对被volatile关键字修饰的变量进行读写操作时，会通过插入特定的 内存屏障 的方式禁止指令重排序。
+        - 但是**volatile**关键字不保证原子性。
+
+    ```
+    public class Singleton{
+        private volatile static Singelton instance；
+
+        private Singleton(){}
+
+        public static Singleton getInstance(){
+            if(instance == null){
+                synchronized(Singleton.class){
+                    if(instance == null){
+                        instance = new Singleton();
+                    }
+                }
+            }
+            return instance;
+        }
+    }
+    ```
+    `instance； = new Singleton()`实际会分三步，1. 为instance分配内存空间；2. 初始化instance；3. 将instance指向分配的内存地址，如果多线程情况下，A线程执行了1、3，这是B线程去执行getInstance方法会发现instance已经不为null了，因此直接返回了，但此时instance还未来得及初始化。
+
+    Q: 什么是乐观锁和悲观锁？
+
+    A: 乐观锁总是假设最好的情况，认为共享资源每次被访问的时候不会出现问题，线程可以不停的执行，无需加锁等待，只是会在提交修改的时候验证对应的资源是否被其他线程修改了。例如CAS算法，atimoic包下的原子类。而悲观锁总是假设最坏的情况，认为共享资源每次被访问的时候就会出现问题，所以每次在获取资源操作的时候就加锁，例如synchronized锁和ReentrantLock都是悲观锁的思想。
+
+    Java中实现CAS是在`Unsafe`类，提供了例如`CompareAndSwapObject()`方法，是一个native方法，这些方法是native的，是直接调用底层的硬件指令来实现原子操作。
+
+    CAS的缺点：
+    1. ABA问题，解决思路是在变量前面加上版本号，或者时间戳。
+    2. 循环时间开销大，CAS经常使用自旋操作，不成功会一直循环，如果长时间不成功，会给CPU带来较大的开销。
+    3. 仅针对单个变量操作有效。
+
+    **synchronized**
+    synchronized 关键字用于解决多线程环境下的同步问题，可以修饰实例方法、静态方法和代码块。
+
+    修饰实例方法 → 锁的是当前实例对象 (this)。
+
+    修饰静态方法 → 锁的是当前类的 Class 对象。
+
+    修饰代码块 → 锁的是 synchronized(obj) 中传入的对象。
+
+    修饰代码块时，编译器会在字节码中插入 monitorenter 和 monitorexit 指令。修饰方法时，方法的访问标志上会加上 ACC_SYNCHRONIZED，JVM 在方法调用时自动获取和释放锁。
+
+    在`synchronized`锁底层实现以 HotSpot 为例，锁的实现依赖对象头中的 Mark Word（对象头的一块区域，存储锁的各种状态标识位） 和 ObjectMonitor（当对象被竞争时，会关联到一个 ObjectMonitor 对象）。当执行monitorenter 时，线程会尝试获取对象监视器的所有权。如果没有竞争，JVM会使用 偏向锁 或 轻量级锁 来优化。如果竞争激烈，会升级为 重量级锁，此时依赖 ObjectMonitor（基于操作系统的互斥量实现）。
+
+    在Java6之后，`synchronized`引入了大量的优化例如自旋锁、适应性自旋锁、锁消除、锁粗化、偏向锁（jdk18中被彻底放弃）、轻量级锁等技术来减少锁操作的开销，这些优化让`synchronized`锁的效率提升了很多。`synchronized`锁主要存在四种状态，依次是无锁状态、偏向锁状态、轻量级锁状态、重量级锁状态，他们会随着竞争的激烈而逐渐升级。锁可以升级不可降级，这种策略是为了提高获得锁和释放锁的效率。
+
+    锁升级的过程：
+    - 假设某共享资源被`synchronized`修饰
+    - （无锁）初始时，共享资源不涉及多线程的竞争访问，这时是无锁状态。
+    - （偏向锁）当共享资源首次被访问时，JVM会对该共享资源对象做一些设置，比如将对象头中`Mark Word`偏向锁标志位设置为1，通过一次 CAS 操作，尝试线程id设置为当前线程ID（这里是操作系统的线程id），后续当前线程再次访问这个共享资源时，会根据**偏向锁标识**跟**线程id**进行对比，对比相同则直接获取到锁，这就是synchronized的可重入功能。
+        ![alt text](image-15.png)
+    - （轻量级锁）当多个线程同时申请共享资源锁的访问时，这就产生了竞争，JVM会先尝试用轻量级锁，以CAS方式来获取锁（一般就是自旋加锁，不阻塞线程，采用循环等待的方式），成功则获取到锁，状态为轻量级锁，失败（达到一定的自旋次数还未成功）则锁升级到重量级锁。
+    - （重量级锁）如果共享资源锁已经被某个线程持有，此时是偏向锁状态，未释放锁前，再有其他线程来竞争时，会升级到重量级锁；另外轻量级锁状态多线程竞争锁时，也会升级到重量级锁，重量级锁由操作系统来实现，性能消耗相对较高。
+
+        ![对象头区域的二进制布局](image-14.png)
+    
+    参考：https://tech.youzan.com/javasuo-yu-xian-cheng-de-na-xie-shi/
+
+    **ReentrantLock**
+
+    `ReentrantLock`是一个可重入且独占式的锁，和`synchronized`关键字作用类似，不过`ReentrantLock`更灵活，更强，增加了轮询、超时、中断、公平锁非公平锁等高级功能。默认是非公平锁。公平锁和非公平锁的区别就是锁被释放后，是否按申请锁的先后顺序保证锁的获取。
+
+    `ReentrantLock`原理是基于AQS实现的，核心是一个阻塞队列 + CAS原语，在加锁时，先尝试用CAS更新状态（State）来获取锁，如果失败，线程进入队列等待（阻塞）；在释放锁时，state减1，检查state是否为0，为0则表示锁完全释放。
+    可以理解为AQS + CAS + state变量实现ReentrantLock，其中获取锁时，线程会用CAS更新state变量，CAS成功，获取锁成功，失败获取锁失败；失败后的线程都会进入到AQS内部的队列，队列里的线程都会被挂起，等锁释放后，会从队列头部唤醒下一个线程。在释放锁时，持有锁的线程会将state变量减1，然后判断state是否等于0，等于0说明锁完全释放
+
+    PS：非公平锁实现 获取锁时，已入队的线程只能按顺序来（避免一直CAS尝试，而设计成唤醒所有的线程一块抢又会出现很多无效竞争，开销也比较大），未入队的线程会直接尝试CAS获取锁。
+
+
+    Q: `synchronized`和`ReentrantLock`有什么区别？
+
+    A: 首先共同点二者都是可重入锁，都可用于解决多线程环境下共享资源的线程安全问题；不同点从语法上看，`synchronized`是java关键字，是由JVM级别支持，简单易用，出了作用域就相当于释放锁，而`ReentrantLock`是JUC包里的一个类，需要手动加锁、释放锁。另外相对于`synchronized`，`ReentrantLock`增加了一些高级功能，主要有三点：
+    - 提供了等待可中断功能，`ReentrantLock`提供了能够终端等待锁的线程的机制，当前线程通过调用`lock.lockInterruptibly()`，等待获取锁，如果其他线程调用了它的`interrupt()`方法，它不会继续等，而是立即抛出一个InterruptedException，从等待中醒来，做其他事情；而`synchronized`则不会中断。
+    - 可实现公平锁，`ReentrantLock`可以指定是公平锁还是非公平锁，而`synchronized`只能是非公平锁。
+    - 支持超时：`ReentrantLock`提供了`tryLock(timeout)`指定等待获取锁的最长等待时间，如果超过等待时间，就会获取锁失败，不会一直等待。
+    - 可实现选择性通知（锁绑定多个条件）：synchronized可以借助`wait()/notify()`实现等待通知机制。而`ReentrantLock`实现选择性通知需要借助`Condition`接口与`newCondition()`方法。
+
+    例如通过选择性通知实现生产者和消费者模型：
+    ```
+    public class ProducerAndConsumer {
+    private static final ReentrantLock lock = new ReentrantLock();
+    private static final Condition notFull = lock.newCondition();
+    private static final Condition notEmpty = lock.newCondition();
+    private static final Integer capacity = 5;
+    private static Integer size = 0;
+    public static void main(String[] args) {
+            Thread producer = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        while(true){
+                            lock.lock();
+                            if(size.equals(capacity)){
+                                notFull.await(); // 等待非慢的條件
+                            }
+                            size++;
+                            System.out.println("生產....");
+                            notEmpty.signal();
+                            lock.unlock();
+                            Thread.sleep(500);
+                        }
+                    }catch (Exception e){
+                        e.printStackTrace();
+                    }
+                }
+            });
+            Thread consumer = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        while(true){
+                            lock.lock();
+                            if(size == 0){
+                                notEmpty.await(); // 等待非空的條件
+                            }
+                            size--;
+                            System.out.println("消費....");
+                            notFull.signal();
+                            lock.unlock();
+                            Thread.sleep(500);
+                        }
+                    }catch (Exception e){
+                        e.printStackTrace();
+                    }
+                }
+            });
+
+            producer.start();
+            consumer.start();
+        }
+    }
+    ```
+
+    **ReentrantReadWriteLock**
+    `ReentrantReadWriteLock`实现了`ReadWriteLock`接口，是一个可重入的读写锁，既可以保证多个线程同时读的效率，同时又可以保证写入操作时的安全。对于读多写少的场景。如果用一般锁进行并发控制，就会读读互斥、读写互斥、写写互斥，效率太低了，读写锁的产生就是为了优化这种场景的效率。
+
+    其中的 WriteLock 写锁是悲观锁、排他独占锁、互斥锁。而 ReadLock 读锁是共享锁、乐观锁
+
+    *读锁升级*在线程持有读锁的情况下，该线程不能取得写锁(因为写锁是独占锁，获取写锁的时候会去检查有没有其他线程持有读锁，只看“读锁计数 > 0”就失败，不管读锁是不是被当前线程持有)。换句话说，`ReentrantReadWriteLock`不支持读锁升级为写锁。如果支持的话，就可能会引入死锁问题，例如：线程A持有`ReentrantReadWriteLock`对象的读锁，想升级为写锁，于是等待所有其他读锁释放，线程B也持有该对象的读锁，也想升级为写锁，这样就会变成两边互相等待，就形成了死锁。
+
+    可以这样理解：写锁是独占锁，获取时必须满足：1. 没有线程持有读锁；2. 没有线程持有写锁
+
+    *写锁降级*在线程持有写锁的情况下，该线程可以继续获取读锁（获取读锁时如果发现写锁被占用，只有写锁没有被当前线程占用的情况才会获取失败）。
+
+    一般锁并发控制的规则：读读互斥、读写互斥、写写互斥；而读写锁的并发控制规则：读读不互斥、读写互斥、写写互斥、*只有读读不互斥*。
+    https://mp.weixin.qq.com/s/h3VIUyH9L0v14MrQJiiDbw
+
+    **AQS**
+
 5.  JVM的原理，垃圾回收，分代收集的算法，各种问题怎么排查（频繁Full GC，内存占用大，OOM等），JVM各种参数的优化。
 6.  CMS, Parralel, G1等垃圾回收器的原理
 7.  JAVA类加载的过程与这样做的原因，有没有办法打破双亲委派，Class这个类在哪一块区域

@@ -606,14 +606,45 @@
 8.  Spring中Bean的生命周期，Spring MVC的流程，Spring IOC和AOP的原理，为什么动态代理必须基于接口？
 
     **Spring中Bean的生命周期**
+    在spring中是通过doCreateBean方法来创建bean对象的，大概会经过实例化、属性赋值、初始化、销毁这几个阶段。
+    - 实例化：实例化时，首先会判断是否为单例的bean，如果是的话会先从已有的bean map中remove掉，然后通过createBeanInstance来通过反射实例化Bean。
+    - 属性赋值：根据BeanDefinition中的依赖信息，为bean设置相关属性和依赖注入，另外`AutowiredAnnotationBeanPostProcessor`;`@Resource`;`@Value`都是在这个阶段生效。
+    - 初始化：初始化分为几个步骤，首先是Aware接口回调，例如`BeanNameAware.setBeanName()；BeanFactoryAware.setBeanFactory(); ApplicationContextAware.setApplicationContext()`；然后试BeanPostProcessor前置处理`postProcessBeforeInitlization()`; 接着是自定义初始化方法调用，如果实现了InitlizingBean接口，则调用afterPropertiesSet()方法，如果在注解中或者xml中指定了init-method()则调用该方法，最后是BeanPostProcessor的后置处理`postProcessAfterInitlization()`, AOP就是在这里用代理对象。
+    - 销毁：容器关闭时，调用Bean的销毁回调方法，释放Bean所持有的资源。
 
     **IOC**
-    IOC（控制反转）是一种设计思想，而不是具体的实现，Ioc的思想是将原本在程序中手动创建对象的控制权，交给Spring框架来管理，这样的好处包括：对象之间的耦合度依赖程度降低。
+    IOC（控制反转）是一种设计思想，而不是具体的实现，Ioc的思想是将原本在程序中手动创建对象的控制权，交给Spring框架来管理，通过容器（ApplicationContext / BeanFactory）统一管理对象（Bean）的创建、依赖注入、生命周期与销毁。避免手动 new 对象，降低对象之间的耦合度依赖程度。
+
+    IoC的底层和Bean的生命周期关系非常密切，主要包括几个步骤：
+    - 配置元信息，Spring要知道需要管理哪些Bean、依赖关系。例如开发时通过xml配置或者@Configuration + @Bean、@ComponentScan注解扫描指定包，将这些配置信息解析成BeanDefinition(Bean的定义对象)
+    - 容器启动 + BeanDefinition 注册，容器（ApplicationContext）启动时，会扫描所有的配置文件、注解类，将每个类的元信息（BeanDefinition）注册到 BeanDefinitionMap中
+    - Bean实例化，容器会根据BeanDefinition反射调用构造方法实例化对象。
+    - 容器会检查bean之间的依赖关系，从容器中拿到Bean实例，然后注入。
+    - 初始化与扩展，在Bean初始化时，会调用一些预留的扩展方法例如检查是否实现了Aware接口、前置、后置初始化方法调用等。
+    - 初始化之后就是可以使用的状态了，放入到Bean实例的池子中
+    - 销毁，容器关闭时，销毁Bean，回收资源。
+
+    而SpringBoot在此基础上，做了很多自动化封装，少了很多配置的操作，主要流程包括：容器创建、加载BeanDefinition（通过注解@ComponentScan或者@EnableAutoConfiguration扫描声明的bean）、Bean的实例化和依赖注入、容器就绪，所有Bean是可使用状态。
 
     **AOP**
     AOP即面向切面编程，AOP将横切关注点例如日志记录等代码从核心逻辑中抽离出来，通过动态代理、字节码操作的技术，实现代码的复用和解耦，提高代码的扩展性。
     
-    AOP的实现方式由动态代理和字节码操作等方式，Spring AOP是基于动态代理的，
+    AOP原理整体是基于 代理模式 + 反射 + IoC生命周期扩展点（BeanPostProcessor）实现的。
+
+    如果某个类的方法被切面拦截，那么在Bean生命周期走到初始化后置处理阶段（BeanPostProcessor）时，会触发AOP代理创建器，它会检查Bean是否需要代理，如果需要，就不会直接把Bean放入到容器中，而是通过反射（JDK Proxy或CGLIB代理）生成一个代理对象，这个代理对象持有原始对象的引用，把代理对象放入到容器中，替换掉原始对象。
+
+    JDK提供的Proxy机制实现时是需要根据该接口生成一个新的实现类，实现目标对象的接口方法，而不是继承目标类本身，所以JDK动态代理必须要基于接口，如果目标类没有接口，就会使用CGLIB代理，生成一个子类，通过方法拦截的方式增强父类的方法。
+
+
+    **Spring MVC的流程**
+    ![Spring MVC的流程图image-19.png)
+
+    1. Http请求过来时，会通过 DispatcherServlet 拦截请求。
+    2. DispatchServlet 会根据请求信息调用 HandlerMapping。HandlerMapping 根据url / 注解查找能处理的handler（也就是Controller），并将请求涉及到的拦截器和Handler封装好。
+    3. DispatchServlet 调用 HandlerAdapter 适配器来进行对应controller中方法的调用
+    4. 如果前后端分离后，会将方法调用结果交给 HttpMessageConverter 转换为JSON返回给前端。
+
+
 
 9.  各种Collection的原理，Hashmap，Hashtable，ArrayList，LinkedList，Hashset，Treemap，ConcurrentHashMap（重点，扩容机制，写入机制，新旧版本对比（阻塞队列等））
 

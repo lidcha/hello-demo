@@ -676,7 +676,225 @@ Redis的速度非常快，主要有以下几个原因：
 ## 场景
 
 1.  如何实现延时队列（redis zset或者时间轮的方式）
+    如果简单实现的话，可以考虑使用堆或者优先队列、有序集合，按照到期时间排序。并且后台启动一个轮询线程，不断检查堆顶任务是否到期，到期执行，不到期则sleep一小段时间。
+
+    或者可以考虑基于Redis Sorted Set实现，以任务队列作为key，任务内容作为value，任务执行时间戳作为socre；
+    
+    在消费任务时，需要定时轮询ZRANGEBYSCORE来获取到期任务，然后执行任务；执行后删除已执行任务；
+
+    缺点是轮询精度有限，任务量大时Sorted Set会占用大量内存
+
+    ```
+        RedissonClient client = Redisson.create();
+        RedisDelayQueue redisDelayQueue = new RedisDelayQueue(client, "ready-queue-1", "delay-queue-1");
+        redisDelayQueue.addTask("task-0001", 2000);
+        Thread thread = new Thread(() -> {
+            try {
+                RScoredSortedSet<Object> delayQueue = client.getScoredSortedSet("delay-queue");
+                RQueue<Object> readyQueue = client.getQueue("ready-execer");
+                RLock lock = client.getLock("pollerLock");
+
+                while (true) {
+                    if (lock.tryLock()) {
+                        try {
+                            ScoredEntry<Object> firstEntry = delayQueue.firstEntry();
+                            if (firstEntry != null && firstEntry.getScore() <= System.currentTimeMillis()) {
+                                if (delayQueue.remove(firstEntry.getValue())) {
+                                    readyQueue.add(firstEntry.getValue());
+                                }
+                            } else {
+                                Thread.sleep(1000);
+                            }
+                        } finally {
+                            lock.unlock();
+                        }
+                    } else {
+                        Thread.sleep(1000);
+                    }
+
+                }
+            } catch (Exception e) {
+                Thread.currentThread().interrupt();
+            }
+
+        }, "delay-poller");
+        thread.setDaemon(true);
+        thread.start();
+    ```
+
+    或者考虑使用时间轮，可以保证单机高性能；通过环形数组 + 链表的数据结构，时间轮指针按固定不长移动，每个slot对应一段时间，任务到期时触发
+
+    ```
+    import java.util.*;
+    import java.util.concurrent.*;
+
+    class TimerTask {
+        Runnable task;
+        long delay; // 毫秒
+        int rounds; // 剩余轮数
+
+        public TimerTask(Runnable task, long delay, int rounds) {
+            this.task = task;
+            this.delay = delay;
+            this.rounds = rounds;
+        }
+    }
+
+    class TimeWheel {
+        private final int size;
+        private final long tick; // 每格时间间隔
+        private final List<Queue<TimerTask>> slots;
+        private int currentSlot = 0;
+        private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
+
+        public TimeWheel(int size, long tickMillis) {
+            this.size = size;
+            this.tick = tickMillis;
+            slots = new ArrayList<>(size);
+            for (int i = 0; i < size; i++) {
+                slots.add(new ConcurrentLinkedQueue<>());
+            }
+        }
+
+        public void start() {
+            scheduler.scheduleAtFixedRate(this::tick, tick, tick, TimeUnit.MILLISECONDS);
+        }
+
+        public void stop() {
+            scheduler.shutdown();
+        }
+
+        private void tick() {
+            Queue<TimerTask> slot = slots.get(currentSlot);
+            Iterator<TimerTask> it = slot.iterator();
+            while (it.hasNext()) {
+                TimerTask task = it.next();
+                if (task.rounds <= 0) {
+                    task.task.run();
+                    it.remove();
+                } else {
+                    task.rounds--;
+                }
+            }
+            currentSlot = (currentSlot + 1) % size;
+        }
+
+        public void addTask(Runnable task, long delayMillis) {
+            int totalTicks = (int) (delayMillis / tick);
+            int rounds = totalTicks / size;
+            int slotIndex = (currentSlot + totalTicks) % size;
+            slots.get(slotIndex).offer(new TimerTask(task, delayMillis, rounds));
+        }
+    }
+
+    public class TimeWheelExample {
+        public static void main(String[] args) throws InterruptedException {
+            TimeWheel tw = new TimeWheel(60, 1000); // 60格，每格1秒
+            tw.start();
+
+            tw.addTask(() -> System.out.println("任务1执行"), 5000);
+            tw.addTask(() -> System.out.println("任务2执行"), 8000);
+
+            Thread.sleep(10000);
+            tw.stop();
+        }
+    }
+
+    ```
+
+
+
+
+
 2.  限流的各种方法，如何用redis zset实现滑动窗口限流，如何用redis实现令牌桶限流
+
+    限流常见实现算法：
+    - 计数器算法：将时间周期分为固定大小的窗口（如每分钟、每小时），并在每个窗口内统计请求的数量，如果窗口内请求数达到预设阈值，后续请求将被限制。时间窗口结束后，计数器清零。实现简单，但是在窗口切换时刻可能会有流量突刺问题，窗口结束
+    - 滑动窗口个算法：将时间窗口划分为多个小时间段，每个小时间段有自己的计数器，随着事件流失，窗口像滑块一样平移，所有小时间段的和不能超过阈值
+    - 漏桶算法：类似一个固定容量的桶（锥形桶）
+    - 令牌桶：与漏桶相反，请求到达时，需要从桶中取出一个令牌，如果拿得到，则放行，否则拦截
+
+
+    单机实现令牌桶：
+    ```
+    public class TokenBucket {
+        private final long capacity;
+        private final long rate;
+        private long lastFillTime;
+        private double tokens;
+        private final Object lock = new Object();
+
+        public TokenBucket(long capacity, long rate, long lastFillTime, double tokens) {
+            this.capacity = capacity;
+            this.rate = rate;
+            this.lastFillTime = lastFillTime;
+            this.tokens = tokens;
+        }
+
+        public boolean tryAcquire(){
+            synchronized (lock){
+                long now = System.currentTimeMillis();
+                double delta = (now - lastFillTime) * rate / 1_000_000_000D;
+                tokens = Math.min(capacity, tokens + delta);
+
+                if(tokens >= 1){
+                    tokens -= 1;
+                    lastFillTime = now;
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+
+    ```
+    通过redis lua脚本实现令牌桶
+    ```
+    -- 参数： KEYS[1] = tokens_key, KEYS[2] = last_time_key
+    --       ARGV[1] = capacity, ARGV[2] = refille_rate, ARGV[3] = now_sec, ARGV[4] = need
+    local tk_key = KEYS[1]
+    local lt_key = KEYS[2]
+
+    local cap = tonumber(ARGV[1])
+    local rate = tonumber(ARGV[2])
+    local now = tonumber(ARGV[3])
+    local need = tonumber(ARGV[4])
+
+    -- 取当前令牌数和更新时间
+    local tokens = tonumber(redis.call('GET', tk_key) or cap)
+    local last_update = tonumber(redis.call('GET', lt_key) or now)
+
+    -- 计算应增加的令牌数
+    local delta = math.min(cap, tokens + (now - last_update) * rate)
+    local left = tokens - delta
+
+    if left >= 0 then
+        redis.call('SET', tk_key, left)
+        redis.call('SET', lt_key, now)
+        return 1
+    else
+        redis.call('SET', tk_key, left)
+        redis.call('SET', lt_key, now)
+        return 0
+    end
+
+    -- 调用方式如下：
+    String luaSha = jedis.scriptLoad(luaScript); // 启动时加载一次
+    boolean tryAcquire(String resource, int capacity, int refillRate) {
+        List<String> keys = Arrays.asList(
+                "token_bucket:" + resource + ":tokens",
+                "token_bucket:" + resource + ":last");
+        List<String> args = Arrays.asList(
+                String.valueOf(capacity),
+                String.valueOf(refillRate),
+                String.valueOf(System.currentTimeMillis() / 1000.0),
+                "1");
+        long result = (long) jedis.evalsha(luaSha, keys, args);
+        return result == 1;
+    }
+    ```
+
+
 3.  如何设计一个通知系统，能够满足不同部门要求的各种通知类型（邮件，短信，电话等方式）
 4.  在几千万用户的情况下，如何用redis快速查询单个用户的消费排名
 5.  如何实现一个一百亿数据量，100万QPS的短URL系统，且能够统计每个URL被访问的次数和访问次数最多的100个URL

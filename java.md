@@ -232,9 +232,12 @@
     ThreadLocal原理如下：
 
     每个Thread对象里有个`ThreadLocalMap`属性。`ThreadLocalMap`底层是一个自定义Entry数组，可以理解为`ThreadLocal`对象实现的定制化的hashMap，key是ThreadLocal实例本身（用弱引用存储），value是当前线程对应的副本数据。
+    ```
     Thread
         └── ThreadLocalMap (存放本线程相关的数据)
-            └── Entry (key = ThreadLocal 弱引用, value = 实际存储的对象)
+            └── Entry (key = ThreadLocal实例本身（弱引用）, value = 实际存储的变量对象)
+    ```
+    
     当调用`threadlocal.set(value)`方法时，会拿到当前线程，找到它的`ThreadLocalMap`，以当前`ThreadLocal`作为key存进去value值。`get()`时也类似。
 
     Q: 为什么要弱引用？
@@ -285,7 +288,7 @@
         }
     }
     ```
-    `instance； = new Singleton()`实际会分三步，1. 为instance分配内存空间；2. 初始化instance；3. 将instance指向分配的内存地址，如果多线程情况下，A线程执行了1、3，这是B线程去执行getInstance方法会发现instance已经不为null了，因此直接返回了，但此时instance还未来得及初始化。
+    `instance = new Singleton()`实际会分三步，1. 为instance分配内存空间；2. 初始化instance；3. 将instance指向分配的内存地址，如果多线程情况下，A线程执行了1、3，这是B线程去执行getInstance方法会发现instance已经不为null了，因此直接返回了，但此时instance还未来得及初始化。
 
     Q: 什么是乐观锁和悲观锁？
 

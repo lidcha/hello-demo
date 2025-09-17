@@ -1,0 +1,350 @@
+{
+    "root": {
+        "data": {
+            "id": "dcuvhtunj1s0",
+            "created": 1758091701508,
+            "text": "Redis"
+        },
+        "children": [
+            {
+                "data": {
+                    "id": "dcuviww6kt40",
+                    "created": 1758091786495,
+                    "text": "简介",
+                    "layout_right_offset": {
+                        "x": 29,
+                        "y": -86
+                    },
+                    "layout": null
+                },
+                "children": [
+                    {
+                        "data": {
+                            "id": "dcuvj2x64zs0",
+                            "created": 1758091799615,
+                            "text": "Nosql数据库；基于内存实现；速度快；常作为服务分布式缓存使用",
+                            "layout": null
+                        },
+                        "children": []
+                    }
+                ]
+            },
+            {
+                "data": {
+                    "id": "dcuvk0tmc4w0",
+                    "created": 1758091873411,
+                    "text": "基本数据结构",
+                    "layout_right_offset": {
+                        "x": -15,
+                        "y": -46
+                    },
+                    "layout": null
+                },
+                "children": [
+                    {
+                        "data": {
+                            "id": "dcuvkvitbqo0",
+                            "created": 1758091940238,
+                            "text": "String：底层数据结构是简单动态字符串，一个动态的字符数组；支持修改和增长；存储字符串长度",
+                            "layout": null,
+                            "priority": null,
+                            "background": "#ffc000",
+                            "color": "#000000"
+                        },
+                        "children": []
+                    },
+                    {
+                        "data": {
+                            "id": "dcuvk7cf35s0",
+                            "created": 1758091887609,
+                            "text": "Hash：hash表和链表结合",
+                            "layout_right_offset": {
+                                "x": 0,
+                                "y": 8
+                            },
+                            "layout": null,
+                            "background": "#ffc000",
+                            "color": "#000000"
+                        },
+                        "children": []
+                    },
+                    {
+                        "data": {
+                            "id": "dcuvsjmgh8o0",
+                            "created": 1758092541250,
+                            "text": "List：双向链表",
+                            "layout_right_offset": {
+                                "x": 1,
+                                "y": 20.249999906867743
+                            },
+                            "background": "#ffc000",
+                            "color": "#000000"
+                        },
+                        "children": []
+                    },
+                    {
+                        "data": {
+                            "id": "dcuvspajco00",
+                            "created": 1758092553590,
+                            "text": "Set：hash表",
+                            "layout_right_offset": {
+                                "x": 5.2499999813735485,
+                                "y": 37.99999977648258
+                            },
+                            "background": "#ffc000",
+                            "color": "#000000"
+                        },
+                        "children": []
+                    },
+                    {
+                        "data": {
+                            "id": "dcuvsqgdcc80",
+                            "created": 1758092556120,
+                            "text": "ZSet：ziplist / skiplist + hash表实现，数据量不大时使用压缩链表；数据量大时采用跳表 + hash表",
+                            "layout_right_offset": {
+                                "x": 6.2499999813735485,
+                                "y": -9.999999478459358
+                            },
+                            "background": "#ffc000",
+                            "color": "#000000"
+                        },
+                        "children": [
+                            {
+                                "data": {
+                                    "id": "dcuw4oyga9s0",
+                                    "created": 1758093493229,
+                                    "text": "跳表",
+                                    "background": "#365f91",
+                                    "color": "#ffffff",
+                                    "layout_right_offset": {
+                                        "x": 19.999999701976776,
+                                        "y": 1.2499999813735485
+                                    }
+                                },
+                                "children": [
+                                    {
+                                        "data": {
+                                            "id": "dcuw66iuadk0",
+                                            "created": 1758093609832,
+                                            "text": "基于多层有序单链表实现",
+                                            "layout_right_offset": {
+                                                "x": 26.249999608844632,
+                                                "y": -12.499999813735485
+                                            }
+                                        },
+                                        "children": []
+                                    },
+                                    {
+                                        "data": {
+                                            "id": "dcuw67l2auw0",
+                                            "created": 1758093612143,
+                                            "text": "链表元素增加额外的forward指针，指向本层级后续节点",
+                                            "layout_right_offset": {
+                                                "x": 31.999999046325684,
+                                                "y": 3.9999998807907673
+                                            }
+                                        },
+                                        "children": []
+                                    },
+                                    {
+                                        "data": {
+                                            "id": "dcuykcbwtk00",
+                                            "created": 1758100361792,
+                                            "text": "节点内部维护level数组实现逻辑分层效果，level数组index变化实现层级跳跃",
+                                            "layout_right_offset": {
+                                                "x": 41.99999874830246,
+                                                "y": 9.999999701976776
+                                            }
+                                        },
+                                        "children": []
+                                    },
+                                    {
+                                        "data": {
+                                            "id": "dcuw7h7qe880",
+                                            "created": 1758093711469,
+                                            "text": "高层元素较少；底层元素较多",
+                                            "layout_right_offset": {
+                                                "x": 32.499999515712375,
+                                                "y": 36.24999945983291
+                                            }
+                                        },
+                                        "children": []
+                                    }
+                                ]
+                            },
+                            {
+                                "data": {
+                                    "id": "dcuw8jyc0ns0",
+                                    "created": 1758093795795,
+                                    "text": "基于实现复杂度、内存和性能的平衡选用跳表",
+                                    "layout_right_offset": {
+                                        "x": 20.00000011175871,
+                                        "y": 43.750000540166866
+                                    }
+                                },
+                                "children": []
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "data": {
+                    "id": "dcuvm3p2qi80",
+                    "created": 1758092036395,
+                    "text": "持久化",
+                    "layout": null,
+                    "layout_right_offset": {
+                        "x": 3.3333331015373915,
+                        "y": -19.99999860922503
+                    }
+                },
+                "children": [
+                    {
+                        "data": {
+                            "id": "dcuyligg4bk0",
+                            "created": 1758100453491,
+                            "text": "AOF",
+                            "layout_right_offset": {
+                                "x": 20.833331884609436,
+                                "y": -1.6666665507687526
+                            }
+                        },
+                        "children": [
+                            {
+                                "data": {
+                                    "id": "dcuylow4i1s0",
+                                    "created": 1758100467499,
+                                    "text": "追加只写文件；Redis将写命令追加到磁盘文件；数据恢复时序顺序执行；先写内存后写日志",
+                                    "layout_right_offset": {
+                                        "x": 1.5000023469327743,
+                                        "y": -34.999998435378075
+                                    }
+                                },
+                                "children": []
+                            },
+                            {
+                                "data": {
+                                    "id": "dcuylpu76gg0",
+                                    "created": 1758100469560,
+                                    "text": "刷盘时机",
+                                    "layout_right_offset": {
+                                        "x": 9.250000450760183,
+                                        "y": -28.499998368322736
+                                    }
+                                },
+                                "children": [
+                                    {
+                                        "data": {
+                                            "id": "dcuymetmlvs0",
+                                            "created": 1758100523945,
+                                            "text": "每次写命令后刷盘"
+                                        },
+                                        "children": []
+                                    },
+                                    {
+                                        "data": {
+                                            "id": "dcuymfexcy80",
+                                            "created": 1758100525233,
+                                            "text": "每秒刷盘一次"
+                                        },
+                                        "children": []
+                                    },
+                                    {
+                                        "data": {
+                                            "id": "dcuymfvuzgg0",
+                                            "created": 1758100526256,
+                                            "text": "由操作系统决定"
+                                        },
+                                        "children": []
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "data": {
+                            "id": "dcuylj05a2o0",
+                            "created": 1758100454682,
+                            "text": "RDB",
+                            "layout_right_offset": {
+                                "x": 26.24999826774004,
+                                "y": -10.000001105169417
+                            }
+                        },
+                        "children": [
+                            {
+                                "data": {
+                                    "id": "dcuyplrenhc0",
+                                    "created": 1758100774140,
+                                    "text": "每隔一段时间，将Redis内存中的数据快照保存到磁盘上；二进制文件；恢复数据速度快"
+                                },
+                                "children": []
+                            },
+                            {
+                                "data": {
+                                    "id": "dcuypmhh28w0",
+                                    "created": 1758100775717,
+                                    "text": "save命令（主进程）；bgsave命令（fork紫禁城）"
+                                },
+                                "children": []
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "data": {
+                    "id": "dcuyrt7x20w0",
+                    "created": 1758100947105,
+                    "text": "I/O多路复用",
+                    "layout_right_offset": {
+                        "x": -8.749999608844519,
+                        "y": 27.499998770654344
+                    }
+                },
+                "children": [
+                    {
+                        "data": {
+                            "id": "dcuysv5wdn40",
+                            "created": 1758101029700,
+                            "text": "处理海量客户端连接",
+                            "layout_right_offset": {
+                                "x": 27.499998770654372,
+                                "y": -26.249998826533613
+                            }
+                        },
+                        "children": []
+                    },
+                    {
+                        "data": {
+                            "id": "dcuysvqnci00",
+                            "created": 1758101030955,
+                            "text": "高效的事件监听分发机制；允许单个线程同时监视大量I/O连接，在连接就绪时才开始处理",
+                            "layout_right_offset": {
+                                "x": 34.99999843537819,
+                                "y": 11.249999497085753
+                            }
+                        },
+                        "children": []
+                    }
+                ]
+            },
+            {
+                "data": {
+                    "id": "dcuysx57q5c0",
+                    "created": 1758101034012,
+                    "text": "事件驱动",
+                    "layout_right_offset": {
+                        "x": -8.749999608844547,
+                        "y": 54.99999754130863
+                    }
+                },
+                "children": []
+            }
+        ]
+    },
+    "template": "right",
+    "theme": "classic-compact",
+    "version": "1.4.43"
+}
